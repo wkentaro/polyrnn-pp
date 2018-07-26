@@ -1,10 +1,12 @@
 import glob
 import json
 import os
+import os.path as osp
 
 import matplotlib
 matplotlib.use('agg')  # NOQA
 
+import cv2
 import numpy as np
 import skimage.io
 import tensorflow as tf
@@ -19,17 +21,19 @@ import utils
 _BATCH_SIZE = 1
 _FIRST_TOP_K = 5
 
-_INPUT_FOLDER = 'imgs/'
-_OUTPUT_FOLDER = 'output/'
+here = osp.dirname(osp.abspath(__file__))
+models_dir = osp.join(here, '../models')
+_INPUT_FOLDER = osp.join(here, 'imgs/')
+_OUTPUT_FOLDER = osp.join(here, 'output/')
 
 
 class Inferencer(object):
 
-    PolyRNN_metagraph = 'models/poly/polygonplusplus.ckpt.meta'
-    PolyRNN_checkpoint = 'models/poly/polygonplusplus.ckpt'
-    EvalNet_checkpoint = 'models/evalnet/evalnet.ckpt'
-    GGNN_checkpoint = 'models/ggnn/ggnn.ckpt'
-    GGNN_metagraph = 'models/ggnn/ggnn.ckpt.meta'
+    PolyRNN_metagraph = osp.join(models_dir, 'poly/polygonplusplus.ckpt.meta')
+    PolyRNN_checkpoint = osp.join(models_dir, 'poly/polygonplusplus.ckpt')
+    EvalNet_checkpoint = osp.join(models_dir, 'evalnet/evalnet.ckpt')
+    GGNN_checkpoint = osp.join(models_dir, 'ggnn/ggnn.ckpt')
+    GGNN_metagraph = osp.join(models_dir, 'ggnn/ggnn.ckpt.meta')
     Use_ggnn = True
 
     def __init__(self):
@@ -46,9 +50,9 @@ class Inferencer(object):
             saver = tf.train.Saver()
 
             # Start session
-            evalSess = tf.Session(config=tf.ConfigProto(
-                allow_soft_placement=True
-            ), graph=evalGraph)
+            config = tf.ConfigProto(allow_soft_placement=True)
+            config.gpu_options.allow_growth = True
+            evalSess = tf.Session(config=config, graph=evalGraph)
             saver.restore(evalSess, self.EvalNet_checkpoint)
 
         # PolygonRNN++
@@ -59,9 +63,9 @@ class Inferencer(object):
             lambda input_: evaluator.do_test(evalSess, input_)
         )
 
-        polySess = tf.Session(config=tf.ConfigProto(
-            allow_soft_placement=True
-        ), graph=polyGraph)
+        config = tf.ConfigProto(allow_soft_placement=True)
+        config.gpu_options.allow_growth = True
+        polySess = tf.Session(config=config, graph=polyGraph)
 
         model.saver.restore(polySess, self.PolyRNN_checkpoint)
         self.model = model
@@ -79,7 +83,8 @@ class Inferencer(object):
             self.ggnnModel = ggnnModel
             self.ggnnSess = ggnnSess
 
-    def __call__(self, image_np):
+    def __call__(self, image):
+        image_np = cv2.resize(image, (224, 224))
         image_np = np.expand_dims(image_np, axis=0)
         preds = [
             self.model.do_test(self.polySess, image_np, top_k)
